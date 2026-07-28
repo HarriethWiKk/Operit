@@ -272,7 +272,9 @@ object OpenAIResponsesPayloadAdapter {
         val totalInputTokens: Int,
         val actualInputTokens: Int,
         val cachedInputTokens: Int,
-        val outputTokens: Int
+        val outputTokens: Int,
+        val promptCacheHitTokens: Int = 0,   // DeepSeek 特有：缓存命中 token 数
+        val promptCacheMissTokens: Int = 0    // DeepSeek 特有：缓存未命中 token 数
     )
 
     data class ParsedResponseOutput(
@@ -313,9 +315,22 @@ object OpenAIResponsesPayloadAdapter {
                 ?: usage.optLong("cached_tokens", -1))
                 .coerceAtLeast(0)
                 .saturateToInt()
-        val actualInputTokens = (totalInputTokens - cachedInputTokens).coerceAtLeast(0)
 
-        return UsageCounts(totalInputTokens, actualInputTokens, cachedInputTokens, outputTokens)
+        // DeepSeek 特有字段：前缀缓存命中/未命中 token 数
+        val promptCacheHitTokens = usage.optLong("prompt_cache_hit_tokens", 0).saturateToInt()
+        val promptCacheMissTokens = usage.optLong("prompt_cache_miss_tokens", 0).saturateToInt()
+
+        val effectiveCachedInput = if (cachedInputTokens > 0) cachedInputTokens else promptCacheHitTokens
+        val actualInputTokens = (totalInputTokens - effectiveCachedInput).coerceAtLeast(0)
+
+        return UsageCounts(
+            totalInputTokens = totalInputTokens,
+            actualInputTokens = actualInputTokens,
+            cachedInputTokens = effectiveCachedInput,
+            outputTokens = outputTokens,
+            promptCacheHitTokens = promptCacheHitTokens,
+            promptCacheMissTokens = promptCacheMissTokens
+        )
     }
 
     /** 旧 UI 计数边界（P2-1）：Long 饱和为 Int，绝不回绕为负。 */

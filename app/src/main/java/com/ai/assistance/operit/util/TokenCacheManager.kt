@@ -21,6 +21,10 @@ class TokenCacheManager {
     
     // 当前输出token数量
     private var _outputTokenCount = 0L
+
+    // DeepSeek 特有：前缀缓存命中/未命中 token 数（服务端返回）
+    private var _promptCacheHitTokens = 0
+    private var _promptCacheMissTokens = 0
     
     /**
      * 获取缓存的输入token数量
@@ -45,6 +49,18 @@ class TokenCacheManager {
      */
     val outputTokenCount: Long
         get() = _outputTokenCount
+
+    /**
+     * 获取 DeepSeek 前缀缓存命中 token 数（服务端返回）
+     */
+    val promptCacheHitTokens: Int
+        get() = _promptCacheHitTokens
+
+    /**
+     * 获取 DeepSeek 前缀缓存未命中 token 数（服务端返回）
+     */
+    val promptCacheMissTokens: Int
+        get() = _promptCacheMissTokens
     
     /**
      * 重置所有token计数和缓存
@@ -55,6 +71,8 @@ class TokenCacheManager {
         _cachedInputTokenCount = 0L
         _currentInputTokenCount = 0L
         _outputTokenCount = 0L
+        _promptCacheHitTokens = 0
+        _promptCacheMissTokens = 0
     }
     
     /**
@@ -74,13 +92,24 @@ class TokenCacheManager {
     /**
      * 使用API返回的实际token数据更新计数
      * 用于Gemini等支持服务端缓存统计的API
-     * 
+     *
      * @param actualInput 实际的输入token数量（不包括缓存）
      * @param cachedInput 缓存命中的token数量
      */
     fun updateActualTokens(actualInput: Long, cachedInput: Long) {
         _currentInputTokenCount = actualInput.coerceAtLeast(0L)
         _cachedInputTokenCount = cachedInput.coerceAtLeast(0L)
+    }
+
+    /**
+     * 更新 DeepSeek 前缀缓存统计（服务端返回）
+     *
+     * @param hitTokens 缓存命中 token 数
+     * @param missTokens 缓存未命中 token 数
+     */
+    fun updatePromptCacheStats(hitTokens: Int, missTokens: Int) {
+        _promptCacheHitTokens = hitTokens.coerceAtLeast(0)
+        _promptCacheMissTokens = missTokens.coerceAtLeast(0)
     }
     
     /**
