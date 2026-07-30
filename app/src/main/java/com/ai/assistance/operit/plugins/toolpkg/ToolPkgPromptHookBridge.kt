@@ -237,6 +237,7 @@ internal object ToolPkgPromptHookBridge {
             chatHistory = current.chatHistory,
             preparedHistory = current.preparedHistory,
             systemPrompt = current.systemPrompt,
+            dynamicContext = current.dynamicContext,
             toolPrompt = current.toolPrompt,
             availableTools = current.availableTools,
             metadata = current.metadata

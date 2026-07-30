@@ -582,6 +582,7 @@ class ConversationService(
                     groupOrchestrationRoleName = activeCard?.name?.takeIf { it.isNotBlank() }
                         ?: context.getString(R.string.app_name),
                     groupParticipantNamesText = groupParticipantNamesText.orEmpty(),
+                    splitDynamicContext = splitDynamicContext,
                     hookMetadata = activePromptMetadata,
                     dispatchSystemPromptComposeHooks = dispatchSystemPromptComposeHooks,
                     dispatchToolPromptComposeHooks = dispatchToolPromptComposeHooks
@@ -603,26 +604,25 @@ class ConversationService(
                 // 替换提示词中的占位符
                 val aiName = activeCard?.name ?: context.getString(R.string.app_name)
 
-                // 稳定的系统提示词放在最前面（缓存锚点）
-                preparedHistory.add(
-                    0,
-                    PromptTurn(
-                        kind = PromptTurnKind.SYSTEM,
-                        content = systemPromptWithReplacements
-=======
                 if (splitDynamicContext) {
                     // DeepSeek 策略：拆分稳定系统提示词和动态上下文，提高前缀缓存命中率
                     val systemPromptWithReplacements = replacePromptPlaceholders(
                         systemPrompt,
                         aiName
->>>>>>> 21838251 (refactor(llm): restrict system prompt split strategy to DeepSeek provider only)
                     )
 
-                    // 构建动态上下文（角色卡、waifu规则、用户档案、hook注入的动态内容如时间戳等）
+                    // 构建动态上下文（仅包含 hook 注入的动态内容，如时间戳等易变信息）
                     val dynamicContext = buildString {
-                        if (avatarMoodRulesText.isNotEmpty()) {
-                            append(avatarMoodRulesText)
+                        // Skill 通过 hook 注入的动态上下文（如当前时间）
+                        if (!hookDynamicContext.isNullOrBlank()) {
+                            append(hookDynamicContext)
                         }
+                    }
+
+                    // 稳定的系统提示词（包含角色设定、waifu规则、用户档案等）留在历史起始
+                    val finalSystemPrompt = buildString {
+                        append(avatarMoodRulesText)
+                        append(systemPrompt)
                         if (proxyRolePrompt.isNotEmpty()) {
                             append("\n\n<assistant_role source=\"proxy_character_card\">\n")
                             append(proxyRolePrompt)
@@ -630,27 +630,27 @@ class ConversationService(
                         }
                         append(waifuRulesText)
                         if (!disableUserPreferenceDescription && userProfileMarkdown.isNotEmpty()) {
-                            append("\n\n<user_profile source=\"user.md\">\n")
+                            append("\n\n<user_profile source=\"memory-space/$effectiveMemorySpaceId/user.md\">\n")
                             append(userProfileMarkdown)
                             append("\n</user_profile>")
                         }
-                        // Skill 通过 hook 注入的动态上下文（如当前时间）
-                        if (!hookDynamicContext.isNullOrBlank()) {
-                            append("\n\n")
-                            append(hookDynamicContext)
-                        }
                     }
+
+                    val finalSystemPromptWithReplacements = replacePromptPlaceholders(
+                        finalSystemPrompt,
+                        aiName
+                    )
 
                     // 稳定的系统提示词放在最前面（缓存锚点）
                     preparedHistory.add(
                         0,
                         PromptTurn(
                             kind = PromptTurnKind.SYSTEM,
-                            content = systemPromptWithReplacements
+                            content = finalSystemPromptWithReplacements
                         )
                     )
 
-                    // 动态上下文暂存，之后放到历史记录的最后，避免阻断前置历史缓存
+                    // 动态易变内容暂存，之后放到历史记录的最后，避免阻断前置历史缓存
                     if (dynamicContext.isNotBlank()) {
                         val dynamicContextWithReplacements = replacePromptPlaceholders(
                             dynamicContext,
@@ -673,7 +673,7 @@ class ConversationService(
                         }
                         append(waifuRulesText)
                         if (!disableUserPreferenceDescription && userProfileMarkdown.isNotEmpty()) {
-                            append("\n\n<user_profile source=\"user.md\">\n")
+                            append("\n\n<user_profile source=\"memory-space/$effectiveMemorySpaceId/user.md\">\n")
                             append(userProfileMarkdown)
                             append("\n</user_profile>")
                         }
@@ -716,10 +716,17 @@ class ConversationService(
                 }
             }
 
-            // 追加动态上下文到对话历史的末尾（最新的一条用户消息之前）
-            // 这保证了前面的 [Static System] + [历史消息] 形成一个完全稳定的公共前缀，极大提升缓存命中率
+            // 处理追加动态上下文的时机
+            val lastUserMsgIndex = preparedHistory.indexOfLast { it.kind == PromptTurnKind.USER }
+            
             pendingDynamicContext?.let {
-                preparedHistory.add(it)
+                if (lastUserMsgIndex != -1) {
+                    // 追加动态上下文到最新的一条用户消息之前，这保证了前面的 [Static System] + [历史消息] 形成一个完全稳定的公共前缀
+                    preparedHistory.add(lastUserMsgIndex, it)
+                } else {
+                    // 理论上不会走到这里，如果没找到用户消息，就追加到最后
+                    preparedHistory.add(it)
+                }
             }
         }
         val afterContext =

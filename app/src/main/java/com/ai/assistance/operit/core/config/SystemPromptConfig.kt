@@ -726,6 +726,7 @@ AVAILABLE_TOOLS_SECTION""".trimIndent()
           enableGroupOrchestrationHint: Boolean = false,
           groupOrchestrationRoleName: String = "",
           groupParticipantNamesText: String = "",
+          splitDynamicContext: Boolean = false,
           hookMetadata: Map<String, Any?> = emptyMap(),
           dispatchSystemPromptComposeHooks: (PromptHookContext) -> PromptHookContext = PromptHookRegistry::dispatchSystemPromptComposeHooks,
           dispatchToolPromptComposeHooks: (PromptHookContext) -> PromptHookContext = PromptHookRegistry::dispatchToolPromptComposeHooks
@@ -739,18 +740,22 @@ AVAILABLE_TOOLS_SECTION""".trimIndent()
           enableGroupOrchestrationHint, groupOrchestrationRoleName, groupParticipantNamesText,
           hookMetadata, dispatchSystemPromptComposeHooks, dispatchToolPromptComposeHooks
       )
-      // 通过 hook 收集动态上下文
-      val hookContext = dispatchSystemPromptComposeHooks(
-          PromptHookContext(
-              stage = "collect_dynamic_context",
-              chatId = chatId,
-              useEnglish = useEnglish,
-              metadata = hookMetadata
+      // 通过 hook 收集动态上下文 (只有在拆分策略开启时才去收集，避免非必要触发副作用)
+      val hookContext = if (splitDynamicContext) {
+          dispatchSystemPromptComposeHooks(
+              PromptHookContext(
+                  stage = "collect_dynamic_context",
+                  chatId = chatId,
+                  useEnglish = useEnglish,
+                  metadata = hookMetadata
+              )
           )
-      )
+      } else {
+          null
+      }
       return SystemPromptResult(
           systemPrompt = prompt,
-          dynamicContext = hookContext.dynamicContext
+          dynamicContext = hookContext?.dynamicContext
       )
   }
 
