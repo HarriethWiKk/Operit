@@ -63,4 +63,48 @@ class OpenAIResponsesPayloadAdapterTest {
             )
         )
     }
+
+    @Test
+    fun `deepseek prompt cache hit and miss tokens are parsed correctly`() {
+        val json = JSONObject(
+            """
+            {
+                "prompt_tokens": 1500,
+                "completion_tokens": 120,
+                "prompt_cache_hit_tokens": 1400,
+                "prompt_cache_miss_tokens": 100
+            }
+            """.trimIndent()
+        )
+        val counts = OpenAIResponsesPayloadAdapter.parseUsageCounts(json)!!
+        assertEquals(1500, counts.totalInputTokens)
+        assertEquals(120, counts.outputTokens)
+        assertEquals(1400, counts.cachedInputTokens)
+        assertEquals(100, counts.actualInputTokens)
+        assertEquals(1400, counts.promptCacheHitTokens)
+        assertEquals(100, counts.promptCacheMissTokens)
+    }
+
+    @Test
+    fun `standard cached_tokens takes precedence when non-zero while prompt_cache_hit is also parsed`() {
+        val json = JSONObject(
+            """
+            {
+                "prompt_tokens": 2000,
+                "completion_tokens": 50,
+                "prompt_tokens_details": {
+                    "cached_tokens": 1800
+                },
+                "prompt_cache_hit_tokens": 1800,
+                "prompt_cache_miss_tokens": 200
+            }
+            """.trimIndent()
+        )
+        val counts = OpenAIResponsesPayloadAdapter.parseUsageCounts(json)!!
+        assertEquals(2000, counts.totalInputTokens)
+        assertEquals(1800, counts.cachedInputTokens)
+        assertEquals(200, counts.actualInputTokens)
+        assertEquals(1800, counts.promptCacheHitTokens)
+        assertEquals(200, counts.promptCacheMissTokens)
+    }
 }
